@@ -2,12 +2,32 @@
 #include <vector>
 #include <algorithm>
 #include <cmath>
+#include <fstream>
 
 using namespace std;
 
 struct Coordinate {
     double x, y;
 };
+
+vector<Coordinate> accessTSP(int& n, string filename) {
+    ifstream file(filename);
+    string line;
+
+    while (getline(file, line) && line.find("DIMENSION") == string::npos);
+    sscanf(line.c_str(), "DIMENSION : %d", &n);
+
+    while (getline(file, line) && line.find("NODE_COORD_SECTION") == string::npos);
+    vector<Coordinate> coordinates(n);
+    
+    for (int j = 0; j < n; j++) {
+        int id;
+        file >> id >> points[i].x >> points[i].y;
+    }
+
+    return coordinates;
+
+}
 
 double distance(Coordinate a, Coordinate b) {
     double d_x = a.x - b.x;
