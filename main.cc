@@ -15,13 +15,11 @@ int main(int argc, char* argv[]) {
     
     ResultsTracker tracker;
     
-    // Extract dataset name from filename
     std::string dataset = filename.substr(filename.find_last_of("/\\") + 1);
     if (dataset.find(".tsp") != std::string::npos) {
         dataset = dataset.substr(0, dataset.find(".tsp"));
     }
     
-    // Test MST Algorithm
     MSTTSPSolver mst_solver;
     if (mst_solver.loadFromFile(filename)) {
         auto [mst_tour, mst_cost, mst_time] = mst_solver.solveWithTiming();
@@ -33,7 +31,6 @@ int main(int argc, char* argv[]) {
         }
     }
     
-    // Test Held-Karp Algorithm (only for small instances)
     if (mst_solver.getVertexCount() <= 25) {
         HeldKarpTSPSolver hk_solver;
         if (hk_solver.loadFromFile(filename)) {
@@ -52,11 +49,8 @@ int main(int argc, char* argv[]) {
         }
     }
     
-    // Add your novel algorithm here when implemented
-    // tracker.addResult(dataset, "My-Algorithm", vertices, cost, time, "Novel approach");
-    
+
     if (csv_output) {
-        // Output in CSV format for the Makefile
         for (const auto& result : tracker.getResults()) {
             std::cout << result.dataset << "," << result.algorithm << "," 
                       << result.vertices << "," << result.tour_cost << "," 
