@@ -1,30 +1,30 @@
-#ifndef MST_H
-#define MST_H
+#ifndef HELD_KARP_H
+#define HELD_KARP_H
 
 #include <vector>
 #include <utility>
 #include <string>
 #include <fstream>
 
-class MSTTSPSolver {
-private: 
+class HeldKarpTSPSolver {
+private:
     int m_n;
     std::vector<std::vector<double>> m_dist;
     std::vector<std::pair<double, double>> m_coords;
-    std::vector<std::vector<int>> m_mst_adj;
     std::string m_instance_name;
 
-    std::vector<std::pair<int, int>> computeMST();
-    void buildMSTAdjacencyList(const std::vector<std::pair<int, int>>& mst_edges);
-    void dfsPreorder(int vertex, std::vector<bool>& visited, std::vector<int>& preorder);
-    std::vector<int> shortcutTour(const std::vector<int>& preorder);
-    
+    std::vector<std::vector<double>> m_dp;
+    std::vector<std::vector<int>> m_parent;
+
     double euclideanDistance(const std::pair<double, double>& p1, const std::pair<double, double>& p2) const;
     void buildDistanceMatrix();
     bool parseTSPLIBFormat(std::ifstream& file);
     
+    void solveDP();
+    std::vector<int> reconstructPath(int last_vertex);
+
 public:
-    MSTTSPSolver();
+    HeldKarpTSPSolver();
     
     bool loadFromFile(const std::string& filename);
     std::pair<std::vector<int>, double> solve();

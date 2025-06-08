@@ -10,10 +10,10 @@
 #include <map>
 
 std::vector<int> solve_tsp_cluster_hybrid(const std::vector<City>& cities, int K, int sub_problem_starts) {
-    std::cout << "\nClustering cities" << std::endl;
-    auto [clusters_of_global_ids, centroids] = kmeans_plus_plus(cities, K, 100);
+    std::cout << "\nclustering cities" << std::endl;
+    auto [clusters_of_global_ids, centroids] = kmeans_pp(cities, K, 100);
 
-    std::cout << "\nSolving TSP for each cluster" << std::endl;
+    std::cout << "\n solving TSP for each cluster" << std::endl;
     std::vector<std::vector<int>> sub_tours_global(K);
     for (int i = 0; i < K; ++i) {
         if (clusters_of_global_ids[i].empty()) continue;
@@ -21,17 +21,16 @@ std::vector<int> solve_tsp_cluster_hybrid(const std::vector<City>& cities, int K
         for (int global_id : clusters_of_global_ids[i]) {
             sub_problem_cities.push_back(cities[global_id]);
         }
-        // Adaptive effort based on cluster size
         int adaptive_starts = std::max(3, std::min(sub_problem_starts, static_cast<int>(sub_problem_cities.size() * 1.5)));
         sub_tours_global[i] = solve_sub_problem(sub_problem_cities, adaptive_starts, cities);
     }
     
-    std::cout << "\nFinding optimal cluster sequence" << std::endl;
+    std::cout << "\n finding the optimal cluster sequence" << std::endl;
     std::vector<int> centroid_tour_local = solve_sub_problem(centroids, K * 2, centroids);
     if (centroid_tour_local.empty()) return {};
     centroid_tour_local.pop_back();
 
-    std::cout << "\nStitching sub-tours with the closest node pair" << std::endl;
+    std::cout << "\n stitching together the sub-tours with the closest node pair" << std::endl;
     if (centroid_tour_local.empty()) return {};
 
     int first_cluster_idx = centroid_tour_local[0];
@@ -62,7 +61,7 @@ std::vector<int> solve_tsp_cluster_hybrid(const std::vector<City>& cities, int K
 
     if (!final_tour.empty()) final_tour.push_back(final_tour.front());
 
-    std::cout << "\nPost-processing with global 2-opt" << std::endl;
+    std::cout << "\nnew: post-processing with global 2-opt" << std::endl;
     apply_global_two_opt(final_tour, cities);
 
     return final_tour;
@@ -316,7 +315,7 @@ std::vector<int> centroid_nearest_neighbor_start(const std::vector<City>& sub_ci
     return nearest_neighbor_tour(sub_cities, closest_to_centroid);
 }
 
-std::pair<std::vector<std::vector<int>>, std::vector<City>> kmeans_plus_plus(const std::vector<City>& cities, int K, int max_iter) {
+std::pair<std::vector<std::vector<int>>, std::vector<City>> kmeans_pp(const std::vector<City>& cities, int K, int max_iter) {
     const int N = static_cast<int>(cities.size());
     if (K > N) K = N;
     std::vector<City> centroids;
@@ -390,7 +389,7 @@ std::pair<std::vector<std::vector<int>>, std::vector<City>> kmeans_plus_plus(con
 bool parse_tsplib_file(const std::string& filename, std::vector<City>& cities) {
     std::ifstream file(filename);
     if (!file.is_open()) { 
-        std::cerr << "Error: Could not open file " << filename << std::endl; 
+        std::cerr << "cerrror: Could'nt open file " << filename << std::endl; 
         return false; 
     }
     std::string line;
