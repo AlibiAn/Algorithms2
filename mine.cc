@@ -9,6 +9,18 @@
 #include <random>
 #include <map>
 
+//forward declarations for compiler : 
+// Core algorithm functions
+std::pair<std::vector<std::vector<int>>, std::vector<City>> kmeans_pp(const std::vector<City>& cities, int K, int max_iter);
+std::vector<int> solve_sub_problem(const std::vector<City>& sub_cities, int num_starts, const std::vector<City>& all_cities_ref);
+std::pair<int, int> find_closest_connection(const std::vector<int>& tour1, const std::vector<int>& tour2, const std::vector<City>& all_cities);
+void apply_two_opt_local(std::vector<int>& local_tour, const std::vector<City>& sub_cities);
+void apply_global_two_opt(std::vector<int>& tour, const std::vector<City>& all_cities);
+std::vector<int> nearest_neighbor_tour(const std::vector<City>& sub_cities, int start_node_local);
+std::vector<int> furthest_insertion_start(const std::vector<City>& sub_cities);
+std::vector<int> centroid_nearest_neighbor_start(const std::vector<City>& sub_cities);
+double distance(const City& c1, const City& c2);
+
 std::vector<int> solve_tsp_cluster_hybrid(const std::vector<City>& cities, int K, int sub_problem_starts) {
     std::cout << "\nclustering cities" << std::endl;
     auto [clusters_of_global_ids, centroids] = kmeans_pp(cities, K, 100);
