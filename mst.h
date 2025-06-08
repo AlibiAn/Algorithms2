@@ -9,7 +9,6 @@
 class MSTTSPSolver {
 private: 
     int m_n;
-    std::vector<std::vector<double>> m_dist;
     std::vector<std::pair<double, double>> m_coords;
     std::vector<std::vector<int>> m_mst_adj;
     std::string m_instance_name;
@@ -20,9 +19,10 @@ private:
     std::vector<int> shortcutTour(const std::vector<int>& preorder);
     
     double euclideanDistance(const std::pair<double, double>& p1, const std::pair<double, double>& p2) const;
-    void buildDistanceMatrix();
     bool parseTSPLIBFormat(std::ifstream& file);
     
+    double getDistance(int i, int j) const;
+
 public:
     MSTTSPSolver();
     

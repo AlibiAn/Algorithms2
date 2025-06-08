@@ -23,7 +23,8 @@ bool HeldKarpTSPSolver::loadFromFile(const std::string& filename) {
 
     if (m_n > 0) {
         if (m_n > 25) {
-            std::cout << "Karp Running: " << m_n << " vertices, will take a very long time, so won't run it" << std::endl;
+            std::cout << "Skipping held-karp: " << m_n << " vertices is too large(crashes Ubuntu)" << std::endl;
+            return true;
         }
         int num_subsets = 1 << m_n;
         m_dp.assign(num_subsets, std::vector<double>(m_n, std::numeric_limits<double>::max()));
@@ -35,7 +36,7 @@ bool HeldKarpTSPSolver::loadFromFile(const std::string& filename) {
 
 std::pair<std::vector<int>, double> HeldKarpTSPSolver::solve() {
     if (m_n <= 0) return {{}, -1.0};
-    if (m_n > 28) return {{}, -1.0};
+    if (m_n > 25) return {{}, -1.0};
     if (m_n == 1) return {{0, 0}, 0.0};
 
     solveDP();

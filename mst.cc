@@ -6,21 +6,18 @@
 #include <climits>
 #include <cmath>
 #include <limits>
+#include <queue>
 
 MSTTSPSolver::MSTTSPSolver() : m_n(0) {}
 
 bool MSTTSPSolver::loadFromFile(const std::string& filename) {
     std::ifstream file(filename);
-    if (!file.is_open()) {
-        std::cerr << "cerror: Could'nt open file " << filename << std::endl;
-        return false;
-    }
+    if (!file.is_open()) return false;
     if (!parseTSPLIBFormat(file)) {
         file.close();
         return false;
     }
     file.close();
-    buildDistanceMatrix();
     return true;
 }
 
@@ -28,85 +25,96 @@ std::pair<std::vector<int>, double> MSTTSPSolver::solve() {
     if (m_n <= 0) return {{}, 0.0};
     if (m_n == 1) return {{0, 0}, 0.0};
 
-    std::vector<std::pair<int, int>> mst_edges = computeMST();
+    auto mst_edges = computeMST();
     buildMSTAdjacencyList(mst_edges);
     std::vector<bool> visited(m_n, false);
     std::vector<int> preorder;
     dfsPreorder(0, visited, preorder);
-    std::vector<int> tour = shortcutTour(preorder);
+    auto tour = shortcutTour(preorder);
 
     double total_cost = 0.0;
     for (size_t i = 0; i < tour.size() - 1; i++) {
-        total_cost += m_dist[tour[i]][tour[i+1]];
+        total_cost += getDistance(tour[i], tour[i+1]);
     }
     return {tour, total_cost};
 }
-
 
 bool MSTTSPSolver::parseTSPLIBFormat(std::ifstream& file) {
     std::string line;
     bool reading_coords = false;
     while (std::getline(file, line)) {
-        std::string key, value;
-        std::istringstream iss(line);
-        iss >> key;
-        
-        if (key == "NAME:") iss >> m_instance_name;
-        else if (key == "DIMENSION:") {
-            iss >> m_n;
-            m_dist.resize(m_n, std::vector<double>(m_n, 0.0));
-            m_coords.resize(m_n);
-            m_mst_adj.resize(m_n);
-        } else if (key == "NODE_COORD_SECTION") reading_coords = true;
-        else if (key == "EOF") break;
-        else if (reading_coords) {
+        line.erase(0, line.find_first_not_of(" \t\r\n"));
+        line.erase(line.find_last_not_of(" \t\r\n") + 1);
+        if (line.empty()) continue;
+        if (line.rfind("NAME", 0) == 0) {
+            size_t colon_pos = line.find(':');
+            if (colon_pos != std::string::npos) {
+                m_instance_name = line.substr(colon_pos + 1);
+                m_instance_name.erase(0, m_instance_name.find_first_not_of(" \t"));
+            }
+        } else if (line.rfind("DIMENSION", 0) == 0) {
+            size_t colon_pos = line.find(':');
+            std::string dim_str = (colon_pos != std::string::npos) ? line.substr(colon_pos + 1) : line.substr(9);
+            dim_str.erase(0, dim_str.find_first_not_of(" \t"));
+            try { m_n = std::stoi(dim_str); } catch (...) { return false; }
+            if (m_n > 0) {
+                m_coords.resize(m_n);
+                m_mst_adj.resize(m_n);
+            }
+        } else if (line == "NODE_COORD_SECTION") {
+            reading_coords = true;
+        } else if (line == "EOF") {
+            break;
+        } else if (reading_coords) {
+            std::istringstream line_stream(line);
             int id;
             double x, y;
-            std::istringstream line_stream(line);
             if (line_stream >> id >> x >> y && id >= 1 && id <= m_n) {
                 m_coords[id - 1] = {x, y};
             }
         }
     }
-    return true;
+    return m_n > 0;
 }
 
 double MSTTSPSolver::euclideanDistance(const std::pair<double, double>& p1, const std::pair<double, double>& p2) const {
     return sqrt(pow(p1.first - p2.first, 2) + pow(p1.second - p2.second, 2));
 }
 
-void MSTTSPSolver::buildDistanceMatrix() {
-    for (int i = 0; i < m_n; i++) {
-        for (int j = 0; j < m_n; j++) {
-            m_dist[i][j] = (i == j) ? 0.0 : round(euclideanDistance(m_coords[i], m_coords[j]));
-        }
-    }
+double MSTTSPSolver::getDistance(int i, int j) const {
+    if (i == j) return 0.0;
+    return round(euclideanDistance(m_coords[i], m_coords[j]));
 }
 
 std::vector<std::pair<int, int>> MSTTSPSolver::computeMST() {
-    std::vector<bool> in_mst(m_n, false);
     std::vector<double> key(m_n, std::numeric_limits<double>::max());
     std::vector<int> parent(m_n, -1);
+    std::vector<bool> in_mst(m_n, false);
     std::vector<std::pair<int, int>> mst_edges;
     
+    std::priority_queue<std::pair<double, int>, std::vector<std::pair<double, int>>, std::greater<std::pair<double, int>>> pq;
+    
     key[0] = 0.0;
-
-    for (int count = 0; count < m_n; count++) {
-        int u = -1;
-        for (int v = 0; v < m_n; v++) {
-            if (!in_mst[v] && (u == -1 || key[v] < key[u])) {
-                u = v;
-            }
-        }
-        if(u == -1) break; // All remaining vertices are inaccessible
+    pq.push({0.0, 0});
+    
+    while (!pq.empty()) {
+        int u = pq.top().second;
+        pq.pop();
+        if (in_mst[u]) continue;
+        
         in_mst[u] = true;
         if (parent[u] != -1) {
             mst_edges.push_back({parent[u], u});
         }
+        
         for (int v = 0; v < m_n; v++) {
-            if (!in_mst[v] && m_dist[u][v] < key[v]) {
-                key[v] = m_dist[u][v];
-                parent[v] = u;
+            if (!in_mst[v]) {
+                double weight = getDistance(u, v);
+                if (weight < key[v]) {
+                    key[v] = weight;
+                    parent[v] = u;
+                    pq.push({weight, v});
+                }
             }
         }
     }
@@ -114,6 +122,7 @@ std::vector<std::pair<int, int>> MSTTSPSolver::computeMST() {
 }
 
 void MSTTSPSolver::buildMSTAdjacencyList(const std::vector<std::pair<int, int>>& mst_edges) {
+    for (int i = 0; i < m_n; i++) m_mst_adj[i].clear();
     for (const auto& edge : mst_edges) {
         m_mst_adj[edge.first].push_back(edge.second);
         m_mst_adj[edge.second].push_back(edge.first);

@@ -22,10 +22,8 @@ std::vector<int> centroid_nearest_neighbor_start(const std::vector<City>& sub_ci
 double distance(const City& c1, const City& c2);
 
 std::vector<int> solve_tsp_cluster_hybrid(const std::vector<City>& cities, int K, int sub_problem_starts) {
-    std::cout << "\nclustering cities" << std::endl;
     auto [clusters_of_global_ids, centroids] = kmeans_pp(cities, K, 100);
 
-    std::cout << "\n solving TSP for each cluster" << std::endl;
     std::vector<std::vector<int>> sub_tours_global(K);
     for (int i = 0; i < K; ++i) {
         if (clusters_of_global_ids[i].empty()) continue;
@@ -37,12 +35,10 @@ std::vector<int> solve_tsp_cluster_hybrid(const std::vector<City>& cities, int K
         sub_tours_global[i] = solve_sub_problem(sub_problem_cities, adaptive_starts, cities);
     }
     
-    std::cout << "\n finding the optimal cluster sequence" << std::endl;
     std::vector<int> centroid_tour_local = solve_sub_problem(centroids, K * 2, centroids);
     if (centroid_tour_local.empty()) return {};
     centroid_tour_local.pop_back();
 
-    std::cout << "\n stitching together the sub-tours with the closest node pair" << std::endl;
     if (centroid_tour_local.empty()) return {};
 
     int first_cluster_idx = centroid_tour_local[0];
@@ -73,7 +69,6 @@ std::vector<int> solve_tsp_cluster_hybrid(const std::vector<City>& cities, int K
 
     if (!final_tour.empty()) final_tour.push_back(final_tour.front());
 
-    std::cout << "\nnew: post-processing with global 2-opt" << std::endl;
     apply_global_two_opt(final_tour, cities);
 
     return final_tour;
