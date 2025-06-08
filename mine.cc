@@ -1,21 +1,5 @@
-
-// Version 3: Clustering with Closest Node Pair Stitching
-//
-//More Changes from V2:
-// 1.  Upgraded Tour Stitching Logic: This is the key improvement. The Combining phase was
-//     completely reworked to be better.
-// 2.  New dedicated function was created to find
-//     the absolute shortest "bridge" between two sub-tours by checking every possible pair of nodes.
-// 3.  Merging: Instead of connecting a sub-tour to the abstract centroid of its neighbor,
-//     the algorithm now connects it to the actual nearest node.
-//
-// New Insights:
-//  Slightly better than V2 at non centroid data like Kazakhstan map
-// 
-
+#include "mine.h"
 #include <iostream>
-#include <vector>
-#include <string>
 #include <fstream>
 #include <sstream>
 #include <cmath>
@@ -25,43 +9,6 @@
 #include <random>
 #include <map>
 
-struct City { int id; double x, y; };
-
-bool parse_tsplib_file(const std::string& filename, std::vector<City>& cities);
-double distance(const City& c1, const City& c2);
-double calculate_tour_cost(const std::vector<int>& tour, const std::vector<City>& all_cities);
-std::vector<int> solve_tsp_cluster_hybrid(const std::vector<City>& cities, int K, int sub_problem_starts);
-std::pair<int, int> find_closest_connection(const std::vector<int>& tour1, const std::vector<int>& tour2, const std::vector<City>& all_cities);
-std::pair<std::vector<std::vector<int>>, std::vector<City>> kmeans_plus_plus(const std::vector<City>& cities, int K, int max_iter);
-std::vector<int> solve_sub_problem(const std::vector<City>& sub_cities, int num_starts, const std::vector<City>& all_cities_ref);
-
-
-int main(int argc, char* argv[]) {
-    if (argc < 3) {
-        std::cerr << "Usage: " << argv[0] << " <path_to_tsp_file> <num_clusters> [sub_problem_starts]" << std::endl;
-        return 1;
-    }
-    std::string filename = argv[1];
-    int K = std::stoi(argv[2]);
-    int sub_problem_starts = (argc > 3) ? std::stoi(argv[3]) : 10;
-
-    std::vector<City> cities;
-    if (!parse_tsplib_file(filename, cities)) return 1;
-
-    std::cout << "Version 3: " << std::endl;
-    std::cout << "Successfully parsed " << cities.size() << " cities." << std::endl;
-    std::cout << "Running with K=" << K << " and " << sub_problem_starts << " starts for sub-problems." << std::endl;
-
-    std::vector<int> final_tour = solve_tsp_cluster_hybrid(cities, K, sub_problem_starts);
-    double final_cost = calculate_tour_cost(final_tour, cities);
-
-    std::cout << "\n" << " Best Result Found\n" << std::endl;
-    std::cout << "Final Tour Cost: " << final_cost << std::endl;
-
-    return 0;
-}
-
-// --- Main Orchestrator with NEW Stitching Logic ---
 std::vector<int> solve_tsp_cluster_hybrid(const std::vector<City>& cities, int K, int sub_problem_starts) {
     std::cout << "\nClustering cities" << std::endl;
     auto [clusters_of_global_ids, centroids] = kmeans_plus_plus(cities, K, 100);
@@ -74,7 +21,9 @@ std::vector<int> solve_tsp_cluster_hybrid(const std::vector<City>& cities, int K
         for (int global_id : clusters_of_global_ids[i]) {
             sub_problem_cities.push_back(cities[global_id]);
         }
-        sub_tours_global[i] = solve_sub_problem(sub_problem_cities, sub_problem_starts, cities);
+        // Adaptive effort based on cluster size
+        int adaptive_starts = std::max(3, std::min(sub_problem_starts, static_cast<int>(sub_problem_cities.size() * 1.5)));
+        sub_tours_global[i] = solve_sub_problem(sub_problem_cities, adaptive_starts, cities);
     }
     
     std::cout << "\nFinding optimal cluster sequence" << std::endl;
@@ -82,7 +31,7 @@ std::vector<int> solve_tsp_cluster_hybrid(const std::vector<City>& cities, int K
     if (centroid_tour_local.empty()) return {};
     centroid_tour_local.pop_back();
 
-    std::cout << "\nStitching sub-tours with the Closest Node pair" << std::endl;
+    std::cout << "\nStitching sub-tours with the closest node pair" << std::endl;
     if (centroid_tour_local.empty()) return {};
 
     int first_cluster_idx = centroid_tour_local[0];
@@ -113,6 +62,9 @@ std::vector<int> solve_tsp_cluster_hybrid(const std::vector<City>& cities, int K
 
     if (!final_tour.empty()) final_tour.push_back(final_tour.front());
 
+    std::cout << "\nPost-processing with global 2-opt" << std::endl;
+    apply_global_two_opt(final_tour, cities);
+
     return final_tour;
 }
 
@@ -122,6 +74,7 @@ std::pair<int, int> find_closest_connection(const std::vector<int>& tour1, const
 
     if (tour1.empty() || tour2.empty()) return {-1, -1};
 
+    // Try normal orientation
     for (int node1_id : tour1) {
         for (int node2_id : tour2) {
             double d = distance(all_cities[node1_id], all_cities[node2_id]);
@@ -132,12 +85,28 @@ std::pair<int, int> find_closest_connection(const std::vector<int>& tour1, const
             }
         }
     }
+
+    // Try reversed orientation of tour2
+    std::vector<int> tour2_rev(tour2.rbegin(), tour2.rend());
+    for (int node1_id : tour1) {
+        for (int node2_id : tour2_rev) {
+            double d = distance(all_cities[node1_id], all_cities[node2_id]);
+            if (d < min_dist) {
+                min_dist = d;
+                best_node1 = node1_id;
+                best_node2 = node2_id;
+            }
+        }
+    }
+    
     return {best_node1, best_node2};
 }
 
 void apply_two_opt_local(std::vector<int>& local_tour, const std::vector<City>& sub_cities) {
     bool improved = true;
-    int n = local_tour.size() - 1;
+    int n = static_cast<int>(local_tour.size()) - 1;
+    const double epsilon = 1e-9;
+    
     while (improved) {
         improved = false;
         for (int i = 0; i < n - 1; ++i) {
@@ -146,16 +115,55 @@ void apply_two_opt_local(std::vector<int>& local_tour, const std::vector<City>& 
                 const City& c_i1 = sub_cities[local_tour[i+1]];
                 const City& c_j = sub_cities[local_tour[j]];
                 const City& c_j1 = sub_cities[local_tour[j+1]];
-                if (distance(c_i, c_j) + distance(c_i1, c_j1) < distance(c_i, c_i1) + distance(c_j, c_j1)) {
+                
+                double old_dist = distance(c_i, c_i1) + distance(c_j, c_j1);
+                double new_dist = distance(c_i, c_j) + distance(c_i1, c_j1);
+                
+                if (new_dist < old_dist - epsilon) {
                     std::reverse(local_tour.begin() + i + 1, local_tour.begin() + j + 1);
                     improved = true;
+                    break;
                 }
             }
+            if (improved) break;
         }
     }
 }
+
+void apply_global_two_opt(std::vector<int>& tour, const std::vector<City>& all_cities) {
+    bool improved = true;
+    int n = static_cast<int>(tour.size()) - 1;
+    const double epsilon = 1e-9;
+    int iterations = 0;
+    const int max_iterations = 3;
+    
+    while (improved && iterations < max_iterations) {
+        improved = false;
+        iterations++;
+        
+        for (int i = 0; i < n - 1; ++i) {
+            for (int j = i + 1; j < n; ++j) {
+                const City& c_i = all_cities[tour[i]];
+                const City& c_i1 = all_cities[tour[i+1]];
+                const City& c_j = all_cities[tour[j]];
+                const City& c_j1 = all_cities[tour[j+1]];
+                
+                double old_dist = distance(c_i, c_i1) + distance(c_j, c_j1);
+                double new_dist = distance(c_i, c_j) + distance(c_i1, c_j1);
+                
+                if (new_dist < old_dist - epsilon) {
+                    std::reverse(tour.begin() + i + 1, tour.begin() + j + 1);
+                    improved = true;
+                    break;
+                }
+            }
+            if (improved) break;
+        }
+    }
+}
+
 std::vector<int> solve_sub_problem(const std::vector<City>& sub_cities, int num_starts, const std::vector<City>& all_cities_ref) {
-    const int num_sub_cities = sub_cities.size();
+    const int num_sub_cities = static_cast<int>(sub_cities.size());
     if (num_sub_cities == 0) return {};
     if (num_sub_cities == 1) return {sub_cities[0].id, sub_cities[0].id};
 
@@ -167,27 +175,19 @@ std::vector<int> solve_sub_problem(const std::vector<City>& sub_cities, int num_
     std::uniform_int_distribution<> distrib(0, num_sub_cities - 1);
 
     for (int i = 0; i < num_starts; ++i) {
-        int start_node_local = distrib(gen);
         std::vector<int> current_tour_local;
-        std::vector<bool> visited(num_sub_cities, false);
-        current_tour_local.push_back(start_node_local);
-        visited[start_node_local] = true;
-
-        while(current_tour_local.size() < num_sub_cities){
-            int best_next_local = -1;
-            double min_dist = std::numeric_limits<double>::max();
-            for(int next_local = 0; next_local < num_sub_cities; ++next_local){
-                if(!visited[next_local]){
-                    double d = distance(sub_cities[current_tour_local.back()], sub_cities[next_local]);
-                    if(d < min_dist){
-                        min_dist = d;
-                        best_next_local = next_local;
-                    }
-                }
-            }
-            if(best_next_local != -1) { current_tour_local.push_back(best_next_local); visited[best_next_local] = true; } else break;
+        
+        if (i == 0 && num_sub_cities > 2) {
+            current_tour_local = furthest_insertion_start(sub_cities);
+        } else if (i == 1 && num_sub_cities > 3) {
+            current_tour_local = centroid_nearest_neighbor_start(sub_cities);
+        } else {
+            int start_node_local = distrib(gen);
+            current_tour_local = nearest_neighbor_tour(sub_cities, start_node_local);
         }
-        current_tour_local.push_back(start_node_local);
+        
+        if (current_tour_local.empty()) continue;
+        
         apply_two_opt_local(current_tour_local, sub_cities);
 
         std::vector<int> temp_global_tour;
@@ -199,12 +199,125 @@ std::vector<int> solve_sub_problem(const std::vector<City>& sub_cities, int num_
             best_tour_local = current_tour_local;
         }
     }
+    
     std::vector<int> best_tour_global;
     for(int local_idx : best_tour_local) best_tour_global.push_back(sub_cities[local_idx].id);
     return best_tour_global;
 }
+
+std::vector<int> nearest_neighbor_tour(const std::vector<City>& sub_cities, int start_node_local) {
+    const int num_sub_cities = static_cast<int>(sub_cities.size());
+    std::vector<int> current_tour_local;
+    std::vector<bool> visited(num_sub_cities, false);
+    current_tour_local.push_back(start_node_local);
+    visited[start_node_local] = true;
+
+    while(static_cast<int>(current_tour_local.size()) < num_sub_cities){
+        int best_next_local = -1;
+        double min_dist = std::numeric_limits<double>::max();
+        for(int next_local = 0; next_local < num_sub_cities; ++next_local){
+            if(!visited[next_local]){
+                double d = distance(sub_cities[current_tour_local.back()], sub_cities[next_local]);
+                if(d < min_dist){
+                    min_dist = d;
+                    best_next_local = next_local;
+                }
+            }
+        }
+        if(best_next_local != -1) { 
+            current_tour_local.push_back(best_next_local); 
+            visited[best_next_local] = true; 
+        } else break;
+    }
+    current_tour_local.push_back(start_node_local);
+    return current_tour_local;
+}
+
+std::vector<int> furthest_insertion_start(const std::vector<City>& sub_cities) {
+    const int n = static_cast<int>(sub_cities.size());
+    if (n < 3) return nearest_neighbor_tour(sub_cities, 0);
+    
+    double max_dist = 0;
+    int city1 = 0, city2 = 1;
+    for (int i = 0; i < n; ++i) {
+        for (int j = i + 1; j < n; ++j) {
+            double d = distance(sub_cities[i], sub_cities[j]);
+            if (d > max_dist) {
+                max_dist = d;
+                city1 = i;
+                city2 = j;
+            }
+        }
+    }
+    
+    std::vector<int> tour = {city1, city2, city1};
+    std::vector<bool> in_tour(n, false);
+    in_tour[city1] = in_tour[city2] = true;
+    
+    while (static_cast<int>(tour.size()) - 1 < n) {
+        int best_city = -1;
+        double max_min_dist = -1;
+        
+        for (int i = 0; i < n; ++i) {
+            if (in_tour[i]) continue;
+            double min_dist_to_tour = std::numeric_limits<double>::max();
+            for (int j = 0; j < static_cast<int>(tour.size()) - 1; ++j) {
+                min_dist_to_tour = std::min(min_dist_to_tour, distance(sub_cities[i], sub_cities[tour[j]]));
+            }
+            if (min_dist_to_tour > max_min_dist) {
+                max_min_dist = min_dist_to_tour;
+                best_city = i;
+            }
+        }
+        
+        if (best_city == -1) break;
+        
+        int best_pos = 1;
+        double min_increase = std::numeric_limits<double>::max();
+        for (int pos = 1; pos < static_cast<int>(tour.size()); ++pos) {
+            double increase = distance(sub_cities[tour[pos-1]], sub_cities[best_city]) + 
+                            distance(sub_cities[best_city], sub_cities[tour[pos]]) -
+                            distance(sub_cities[tour[pos-1]], sub_cities[tour[pos]]);
+            if (increase < min_increase) {
+                min_increase = increase;
+                best_pos = pos;
+            }
+        }
+        
+        tour.insert(tour.begin() + best_pos, best_city);
+        in_tour[best_city] = true;
+    }
+    
+    return tour;
+}
+
+std::vector<int> centroid_nearest_neighbor_start(const std::vector<City>& sub_cities) {
+    const int n = static_cast<int>(sub_cities.size());
+    
+    double cx = 0, cy = 0;
+    for (const auto& city : sub_cities) {
+        cx += city.x;
+        cy += city.y;
+    }
+    cx /= n;
+    cy /= n;
+    
+    int closest_to_centroid = 0;
+    double min_dist = std::numeric_limits<double>::max();
+    for (int i = 0; i < n; ++i) {
+        double d = std::sqrt((sub_cities[i].x - cx) * (sub_cities[i].x - cx) + 
+                           (sub_cities[i].y - cy) * (sub_cities[i].y - cy));
+        if (d < min_dist) {
+            min_dist = d;
+            closest_to_centroid = i;
+        }
+    }
+    
+    return nearest_neighbor_tour(sub_cities, closest_to_centroid);
+}
+
 std::pair<std::vector<std::vector<int>>, std::vector<City>> kmeans_plus_plus(const std::vector<City>& cities, int K, int max_iter) {
-    const int N = cities.size();
+    const int N = static_cast<int>(cities.size());
     if (K > N) K = N;
     std::vector<City> centroids;
     std::random_device rd;
@@ -243,7 +356,7 @@ std::pair<std::vector<std::vector<int>>, std::vector<City>> kmeans_plus_plus(con
         for (int i = 0; i < N; ++i) {
             double min_dist = std::numeric_limits<double>::max();
             int best_cluster = 0;
-            for (int k = 0; k < centroids.size(); ++k) {
+            for (int k = 0; k < static_cast<int>(centroids.size()); ++k) {
                 double d = distance(cities[i], centroids[k]);
                 if (d < min_dist) { min_dist = d; best_cluster = k; }
             }
@@ -273,13 +386,20 @@ std::pair<std::vector<std::vector<int>>, std::vector<City>> kmeans_plus_plus(con
     for(int k=0; k<K; ++k) centroids[k].id = k;
     return {clusters, centroids};
 }
+
 bool parse_tsplib_file(const std::string& filename, std::vector<City>& cities) {
     std::ifstream file(filename);
-    if (!file.is_open()) { std::cerr << "Error: Could not open file " << filename << std::endl; return false; }
+    if (!file.is_open()) { 
+        std::cerr << "Error: Could not open file " << filename << std::endl; 
+        return false; 
+    }
     std::string line;
     bool in_coord_section = false;
     while (std::getline(file, line)) {
-        if (line.find("NODE_COORD_SECTION") != std::string::npos) { in_coord_section = true; continue; }
+        if (line.find("NODE_COORD_SECTION") != std::string::npos) { 
+            in_coord_section = true; 
+            continue; 
+        }
         if (line.find("EOF") != std::string::npos) break;
         if (in_coord_section) {
             std::stringstream ss(line);
@@ -293,9 +413,11 @@ bool parse_tsplib_file(const std::string& filename, std::vector<City>& cities) {
     std::sort(cities.begin(), cities.end(), [](const City& a, const City& b){ return a.id < b.id; });
     return true;
 }
+
 double distance(const City& c1, const City& c2) {
     return std::round(std::sqrt(std::pow(c1.x - c2.x, 2) + std::pow(c1.y - c2.y, 2)));
 }
+
 double calculate_tour_cost(const std::vector<int>& tour, const std::vector<City>& all_cities) {
     if (tour.empty()) return 0.0;
     double cost = 0.0;
